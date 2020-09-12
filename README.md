@@ -1,15 +1,18 @@
 # audio-player
 
-A custom UI that wraps the HTML5 audio element.
+A custom playlist-style UI that wraps the HTML5 audio element. The player implements many of the same operations available in the built-in audio controls (e.g. click and drag seek, volume on/off, track selection), but presents them in a list with more appealing custom styles. The code is encapsulated in a web component for easy reuse.
+
+![alt text](./images/player.png "Audio UI")
 
 
-To include tracks in the player, add audio elements without controls in a ```html <div>``` inside the web component:
+
+To include tracks in the player, add audio elements without controls in an ```<div>``` inside the web component. The ```title``` attribute indicates the title that will be shown in the rendered player and ```src``` indicates the location of the soundfile:
 
 ```html
-	<audio-player>
-		<div>
-			<audio preload="metadata" id="track01" title="First track" src="../recordings/track01.wav"></audio>
-			<audio preload="metadata" id="track02" title="Second track" src="../recordings/track02.wav"></audio>
-        </div>
-	</audio-player>
+<audio-player>
+    <div>
+        <audio preload="metadata" title="First track" src="./recordings/track01.wav"></audio>
+        <audio preload="metadata" title="Second track" src="./recordings/track02.wav"></audio>
+    </div>
+</audio-player>
 ```

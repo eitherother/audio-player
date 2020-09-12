@@ -2,7 +2,7 @@
 
 A custom playlist-style UI that wraps the HTML5 audio element. The player implements many of the same operations available in the built-in audio controls (e.g. click and drag seek, volume on/off, track selection), but presents them in a list with more appealing custom styles. The code is encapsulated in a web component for easy reuse.
 
-![alt text](./images/player.png "Audio UI")
+![alt text](./images/player.png "Audio UI" =100x)
 
 
 

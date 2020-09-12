@@ -21,3 +21,5 @@ The web component should be relatively straightforward to restyle and has been t
 * Custom elements are not supported in many older browsers, including IE
 * The audio element in mobile safari does not allow users to set the volume attribute (the assumption is that this should be controlled from the device itself)
 * The volume is on/off rather than a continuous slider
+
+Please note that the two volume icons included in this project are from the Material Design library released under the Apache 2.0 License, included in the same folder.

@@ -17,6 +17,6 @@ To include tracks in the player, add two parallel attributes to the web componen
 
 The web component is relatively straightforward to restyle and has been tested in the latest versions (as of Sept 2020) of Chrome, Safari, Mozilla, and Edge both desktop and mobile, but there are a few limitations:
 * Custom elements are not supported in many older browsers, including IE
-* The volume is on/off rather than a continuous slider (though this is consistent with the embedded Soundcloud player)
+* The volume is on/off rather than a continuous slider (though this is consistent with the embedded SoundCloud player)
 
 Please note that the two volume icons included in this project are from the Material Design library released under the Apache 2.0 License, included in the same folder.

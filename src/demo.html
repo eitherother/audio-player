@@ -6,19 +6,14 @@
 	<meta content="utf-8" http-equiv="encoding">
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
 	<link href="https://fonts.googleapis.com/css2?family=Oswald&display=swap" rel="stylesheet">
-	<script type="module" src="./audioComponent.js"></script>
+	<script src="./audioComponent.js"></script>
 </head>
 
 <body style="font-family: 'Oswald', sans-serif">
-	<h3 style="text-align:center">Custom UI wrapping HTML5 audio element</h3>
-	<audio-player>
-		<div>
-			<audio preload="metadata" title="First track" src="../recordings/track01.wav"></audio>
-			<audio preload="metadata" title="Second track" src="../recordings/track02.wav"></audio>
-			<audio preload="metadata" title="Third track" src="../recordings/track03.wav"></audio>
-			<audio preload="metadata" title="Fourth track" src="../recordings/track04.wav"></audio>
-			<audio preload="metadata" title="Fifth track" src="../recordings/track05.wav"></audio>
-		</div>
+	<h3 style="text-align:center">Custom UI for HTML5 audio element</h3>
+	<audio-player
+		tracks='["One", "Two", "Three", "Four", "Five"]'
+		paths='["../recordings/track01.mp3", "./recordings/track02.mp3", "../recordings/track03.mp3", "../recordings/track04.mp3", "../recordings/track05.mp3"]'>
 	</audio-player>
 </body>
 </html>

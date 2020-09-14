@@ -1,31 +1,40 @@
 'use strict';
-import LineDrawing from './lineDrawing.js';
 
 class AudioPlayer extends HTMLElement {
     constructor() {
         super();
         this.cursorBarMax = 182;
-        this.volume = 1;
+        this.muted = false;
     }
 
     connectedCallback() {
+        // Template
         this.attachShadow({ mode: 'open' });
         this.shadowRoot.innerHTML = AudioPlayer.template;
 
-        // Listen for added audio tracks, update DOM with tracks
-        this.shadowRoot.querySelector('slot').addEventListener('slotchange', () => {
-            for (let [i, elem] of this.querySelectorAll('audio').entries()) {
-                let div = document.createElement('div');
-                div.innerHTML = AudioPlayer.trackTemplate(elem.title, i);
-                this.shadowRoot.querySelector('.audio-top').appendChild(div.children[0]);
-            }
+        // Load audio player for each track
+        this.players = [];
+        let tracks = this.tracks;
+        let paths = this.paths;
 
-            this.drawPlayer();
-        });
+        if (!tracks || !paths || !Array.isArray(tracks) || !Array.isArray(paths) || tracks.length !== paths.length) {
+            console.error("Cannot load audio player, missing tracks or paths to files");
+            return;
+        }
 
-        if (this.constructor.isMobileSafari()) {
-            // Mobile safari doesn't allow uses to adjust volume attribute on HTML audio element
-            this.shadowRoot.querySelector('.volume-wrapper').style.display = "none";
+        for (let [i, title] of tracks.entries()) {
+            let div = document.createElement('div');
+            div.innerHTML = AudioPlayer.trackTemplate(title, i);
+            this.shadowRoot.querySelector('.audio-top').appendChild(div.children[0]);
+
+            let audio = new Audio();
+            audio.preload = 'metadata';
+            this.players.push(audio);
+
+            // Move cursor and update time
+            audio.addEventListener('timeupdate', this.updateCursorFromTrack.bind(this), false);
+            audio.src = paths[i];
+            audio.load();
         }
 
         this.addEventHandlers();
@@ -40,15 +49,14 @@ class AudioPlayer extends HTMLElement {
 
         // Volume on/off
         volumeWrapper.addEventListener('click', () => {
-            component.volume = (component.volume + 1) % 2;
+            component.muted = !component.muted;
             volumeWrapper.querySelector('.volume-icon').classList.toggle('volume-icon-mute');
 
             if (isNaN(component.currentTrack)) {
                 return;
             }
-            
-            let player = component.querySelectorAll('audio')[component.currentTrack];
-            player.volume = component.volume;
+
+            this.players[component.currentTrack].muted = component.muted;
         });
 
         // Listener for play/pause
@@ -85,7 +93,7 @@ class AudioPlayer extends HTMLElement {
         function moveHandler(e) {
             let position = newPosition(e);
             cursor.style.left = position + 'px';
-            component.drawPlayer();
+            component.shadowRoot.querySelector('.progress-amount').style.width = (100 * position / component.cursorBarMax) + '%';
             component.updateTime(position / component.cursorBarMax);
         }
 
@@ -117,14 +125,13 @@ class AudioPlayer extends HTMLElement {
     }
 
     playOrPause(event) {
-        var currentWrapper = event.target.closest('.audio-wrapper');
+        let currentWrapper = event.target.closest('.audio-wrapper');
         if (!currentWrapper) {
             return;
         }
 
         let wrappers = this.shadowRoot.querySelectorAll('.audio-wrapper');
-        let players = this.querySelectorAll('audio');
-        let currentPlayer = players[currentWrapper.dataset.index];
+        let currentPlayer = this.players[currentWrapper.dataset.index];
 
         if (!currentPlayer || currentPlayer.error) {
             currentWrapper.querySelector('.audio-title').classList.add('audio-title-error');
@@ -136,16 +143,14 @@ class AudioPlayer extends HTMLElement {
         currentWrapper.classList.add('audio-wrapper-selected');
 
         if (currentPlayer.paused) {
-            clearInterval(this.clearIntervalId);
-
             // turn off other audio stream if it is playing
-            var oldTrack = this.currentTrack;
+            let oldTrack = this.currentTrack;
             this.currentTrack = parseInt(currentWrapper.dataset.index);
             if (!isNaN(oldTrack) && oldTrack !== this.currentTrack) {
                 let oldWrapper = wrappers[oldTrack];
                 oldWrapper.classList.remove('audio-wrapper-selected');
                 oldWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause');
-                players[oldWrapper.dataset.index].pause();
+                this.players[oldWrapper.dataset.index].pause();
             }
 
             // reset cursor if changing or restarting track
@@ -153,28 +158,24 @@ class AudioPlayer extends HTMLElement {
                 currentPlayer.currentTime = 0;
                 this.updateCursorFromTrack();
                 currentPlayer.onended = () => {
-                    clearInterval(this.clearIntervalId);
                     currentWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause');
                     this.updateCursorFromTrack(); // move cursor to end in case last update never happened
                 };
             }
-            
+
             // play, and set up recurring cursor updates
-            currentPlayer.volume = this.volume;
+            currentPlayer.muted = this.muted;
             currentWrapper.querySelector('.audio-icon').classList.add('audio-icon-pause');
-            this.shadowRoot.querySelector('.time-bar-title').innerText = currentPlayer.title;
+            this.shadowRoot.querySelector('.time-bar-title').innerText = this.tracks[this.currentTrack];
             currentPlayer.play();
-            this.clearIntervalId = setInterval(this.updateCursorFromTrack.bind(this), 1000);
         } else {
             currentPlayer.pause();
             currentWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause');
-            clearInterval(this.clearIntervalId);
         }
     }
 
     holdTrack() {
-        clearInterval(this.clearIntervalId);
-        let player = this.querySelectorAll('audio')[this.currentTrack];
+        let player = this.players[this.currentTrack];
         if (!player.paused) {
             player.resumeOnRelease = true;
             player.pause();
@@ -184,12 +185,11 @@ class AudioPlayer extends HTMLElement {
     updateTrackFromCursor() {
         let cursor = this.shadowRoot.querySelector('.cursor');
         let position = (parseInt(cursor.style.left) || 0) / this.cursorBarMax;
-        let player = this.querySelectorAll('audio')[this.currentTrack];
+        let player = this.players[this.currentTrack];
         if (player && position >= 0 && position <= 1) {
             player.currentTime = position * player.duration;
         }
 
-        this.drawPlayer();
         this.updateTime();
 
         if (position === 1) {
@@ -197,25 +197,28 @@ class AudioPlayer extends HTMLElement {
             player.onended();
         } else if (player.resumeOnRelease) {
             player.play();
-            this.clearIntervalId = setInterval(this.updateCursorFromTrack.bind(this), 1000);
         }
 
         delete player.resumeOnRelease;
     }
 
     updateCursorFromTrack() {
-        let player = this.querySelectorAll('audio')[this.currentTrack];
-        var position = this.cursorBarMax * player.currentTime / player.duration;
-        this.shadowRoot.querySelector('.cursor').style.left = position + 'px';
+        let player = this.players[this.currentTrack];
+        if (!player) {
+            return;
+        }
 
-        this.drawPlayer();
+        let position = this.cursorBarMax * player.currentTime / player.duration;
+        this.shadowRoot.querySelector('.cursor').style.left = position + 'px';
+        this.shadowRoot.querySelector('.progress-amount').style.width = ((player.currentTime / player.duration) * 100) + "%";
+        this.updateBuffer(player);
         this.updateTime();
     }
 
     updateTime(position) {
         function formatTime(time) {
             let minutes = Math.floor(time / 60);
-            let seconds =  Math.round(time % 60);
+            let seconds = Math.round(time % 60);
             if (seconds === 60) {
                 seconds = 0;
                 minutes++;
@@ -225,63 +228,56 @@ class AudioPlayer extends HTMLElement {
             return minutes + ':' + paddedSeconds;
         }
 
-        let player = this.querySelectorAll('audio')[this.currentTrack];
+        let player = this.players[this.currentTrack];
         let currentTime = isNaN(position) ? player.currentTime : position * player.duration;
         let current = formatTime(currentTime);
         let total = formatTime(player.duration);
         this.shadowRoot.querySelector('.time-bar-time').innerHTML = current + ' / ' + total;
     }
 
-    drawPlayer() {
-        const canvas = this.shadowRoot.querySelector('.tracks-canvas');
-        const ld = new LineDrawing(canvas, {
-            height: canvas.parentElement.offsetHeight,
-            width: this.shadowRoot.querySelector('.audio-top').offsetWidth,
-            fillStyle: 'transparent',
-            lineWidth: 2,
-            strokeStyle: '#143e67'
-        });
-
-        // Create path and draw
-        let playbar = this.shadowRoot.querySelector('.cursor-wrapper');
-        let playbarHeight = canvas.height - (playbar.offsetHeight / 2) - 12;
-        let playbarWidth = playbar.offsetWidth + 38;
-        let cursor = this.shadowRoot.querySelector('.cursor');
-        let divider = 24 + (parseInt(cursor.style.left) || 0);
-
-        [
-            [2, 2],
-            [2, playbarHeight - 1],
-            [2, playbarHeight - 2, 'transparent'],
-            [16, playbarHeight - 2],
-            [24, playbarHeight - 2, 'transparent'],
-            [divider, playbarHeight - 2, '#ff5200'],
-            [playbarWidth, playbarHeight - 2],
-            [214, playbarHeight - 16, 'transparent'],
-            [214, playbarHeight + 12]
-        ].forEach(p => ld.addPoint(...p));
-
-        ld.draw();
+    updateBuffer(audio) {
+        let duration = audio.duration;
+        if (duration > 0) {
+            for (let i = 0; i < audio.buffered.length; i++) {
+                if (audio.buffered.start(audio.buffered.length - 1 - i) <= audio.currentTime) {
+                    this.shadowRoot.querySelector(".buffered-amount").style.width = (audio.buffered.end(audio.buffered.length - 1 - i) / duration) * 100 + "%";
+                    break;
+                }
+            }
+        }
     }
 
-    static isMobileSafari() {
-        let ua = window.navigator.userAgent;
-        let iOS = !!ua.match(/iPad/i) || !!ua.match(/iPhone/i);
-        let webkit = !!ua.match(/WebKit/i);
-        return iOS && webkit && !ua.match(/CriOS/i);
+    get tracks() {
+        return JSON.parse(this.getAttribute('tracks'));
+    }
+
+    get paths() {
+        return JSON.parse(this.getAttribute('paths'));
     }
 
     static get template() {
         const styles = `
-            .audio-top {
-                padding-bottom: 0px;
+            .player-wrapper {
+                margin: auto;
+                position: relative;
+                width: 272px;
             }
 
-            .canvas-wrapper {
-                margin: auto;
-                max-width: 300px;
+            .audio-top {
+                padding-bottom: 0px;
+                position: relative;
             }
-            
+
+            .audio-top::before {
+                background-color: #143e67;
+                content: '';
+                height: 100%;
+                left:0px;
+                position: absolute;
+                top:0;
+                width:2px;
+            }
+                        
             .ellipsis {
                 overflow: hidden;
                 white-space: nowrap;
@@ -318,8 +314,21 @@ class AudioPlayer extends HTMLElement {
             }
 
             .audio-bar {
-                display: flex;
                 align-items: center;
+                display: flex;
+                margin-left:24px;
+                position: relative;
+            }
+
+            .audio-bar::before {
+                content: '';
+                border-left: solid 2px #143e67;
+                border-bottom: solid 2px #143e67;
+                height: 25px;
+                left: -24px;
+                position: absolute;
+                top: 0px;
+                width: 16px;
             }
 
             .time-bar {
@@ -340,9 +349,11 @@ class AudioPlayer extends HTMLElement {
                 border-radius:10%;
                 cursor: pointer;
                 display: flex;
-                height: 38px;
-                margin-left: 4px;
-                width: 38px;
+                height: 42px;
+                margin-left:8px;
+                position: relative;
+                top: -3px;
+                width: 42px;
                 justify-content: center;
                 -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
             }
@@ -358,10 +369,11 @@ class AudioPlayer extends HTMLElement {
             }
 
             .cursor-wrapper {
-                height:48px;
+                height:32px;
                 width: 192px;
-                margin: 2px 0px;
+                padding-top: 25px;
                 cursor: pointer;
+                position: relative;
                 -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
             }
 
@@ -369,11 +381,39 @@ class AudioPlayer extends HTMLElement {
                 height:16px;
                 width: 16px;
                 background:#143e67;
-                position: relative;
-                top: 16px;
+                position: absolute;
+                top: 18px;
                 border-radius: 50%;
                 cursor: pointer;
             }
+
+            .buffered {
+                height: 2px;
+                position: relative;
+                background: #143e67;
+                width: 192px;
+              }
+              
+              .buffered-amount {
+                display: block;
+                height: 100%;
+                background-color: #00b3d0;
+                width: 0;
+              }
+              
+              .progress {
+                margin-top: -2px;
+                height: 2px;  
+                position: relative;
+                width: 192px;
+              }
+              
+              .progress-amount {
+                display: block;
+                height: 100%;
+                background-color: #ff5200;
+                width: 0;
+              }
 
             .audio-icon {
                 width: 0;
@@ -397,19 +437,19 @@ class AudioPlayer extends HTMLElement {
             }
             
             .audio-wrapper {
-                margin-left: 16px;
-                display: flex;
                 align-items: center;
-                width: 260px;
-                height: 52px;
-                color: black;
                 border-radius: 6px;
                 border-top: solid 1px #ededff;
-                position: relative;
-                overflow: hidden;
+                color: black;
+                display: flex;
+                height: 52px;
+                margin-left: 12px;
                 outline: none;
+                overflow: hidden;
+                position: relative;
                 user-select: none;
                 -moz-user-select: none;
+                width: 260px;
             }
             
             /* Hover and selection effects for mouse */
@@ -442,66 +482,56 @@ class AudioPlayer extends HTMLElement {
                 /* Add background color on touch with transition */
                 .audio-wrapper.audio-wrapper-selected {
                     background-color: lightblue;
-                    transition: background-color 500ms cubic-bezier(0.425, 0.145, 0.840, 0.420);
+                    transition: background-color 450ms cubic-bezier(0.425, 0.145, 0.840, 0.420);
                 }
                 .audio-wrapper {
                     background-color: transparent;
-                    transition: background-color 500ms cubic-bezier(0.190, 0.455, 0.430, 0.790);
+                    transition: background-color 450ms cubic-bezier(0.190, 0.455, 0.430, 0.790);
                 }
             
                 /* Ripple pseudo element */
                 .audio-wrapper::after {
-                    display: none;
+                    background: radial-gradient(transparent, #dddddd 100%);
                     content: '';
                     position: absolute;
                     border-radius: 50%;
-                    background-color: #dddddd;
                     width: 100px;
                     height: 100px;
                     margin-top: -50px;
                     margin-left: -50px;
                     top: 50%;
                     left: 50%;
-                    animation: ripple 1000ms;
-                    opacity: 0;
+                    transform: scale(0);
+                    opacity: 1;
                     z-index: 0;
                 }
             
                 /* Show pseudo element animation only on focus, not on click */
                 .audio-wrapper:focus:not(:active)::after {
-                    display: block;
+                    transform: scale(10);
+                    opacity:0;
+                    transition: 2s;
                 }
-            
-                /* Animation, scales circle and becomes transparent */
-                @keyframes ripple {
-                    0% {
-                        opacity: 1;
-                        transform: scale(0);
-                    }
-                    100% {
-                        opacity: 0;
-                        transform: scale(6);
-                    }
-                }    
             }`;
 
         return `
             <style>${styles}</style>
-            <div class="canvas-wrapper">
-                <canvas class="tracks-canvas" style="position:absolute; z-index:-1;"></canvas>
-                <div class="audio-top">
-                    <slot></slot>
-                </div>
+            <div class="player-wrapper">
+                <div class="audio-top"></div>
                 <div class="audio-bar">
-                    <div class="spacer" style="width:24px; height: 48px;"></div>
                     <div class="cursor-wrapper">
+                        <div class="buffered">
+                            <span class="buffered-amount"></span>
+                        </div>
+                        <div class="progress">
+                            <span class="progress-amount"></span>
+                        </div>
                         <div class="cursor"></div>
                     </div>
-                    <div class="spacer" style="width:12px; height: 48px;"></div>
                     <div class="volume-wrapper">
-                        <div class="volume-icon"></div>
+                            <div class="volume-icon"></div>
+                        </div>
                     </div>
-                </div>
                 <div class="time-bar">
                     <div class="time-bar-title ellipsis"></div>
                     <div class="time-bar-time">0:00 / 0:00</div>

@@ -9,10 +9,10 @@ A custom playlist-style UI that wraps the HTML5 audio element. The player implem
 To include tracks in the player, add two parallel attributes to the web component to indicate track titles and paths to those files:
 
 ```html
-	<audio-player
-		tracks='["One", "Two", "Three", "Four", "Five"]'
-		paths='["./recordings/track01.mp3", "./recordings/track02.mp3", "./recordings/track03.mp3", "./recordings/track04.mp3", "./recordings/track05.mp3"]'>
-	</audio-player>
+<audio-player
+	tracks='["One", "Two", "Three", "Four", "Five"]'
+	paths='["./recordings/track01.mp3", "./recordings/track02.mp3", "./recordings/track03.mp3", "./recordings/track04.mp3", "./recordings/track05.mp3"]'>
+</audio-player>
 ```
 
 The web component is relatively straightforward to restyle and has been tested in the latest versions (as of Sept 2020) of Chrome, Safari, Mozilla, and Edge both desktop and mobile, but there are a few limitations:

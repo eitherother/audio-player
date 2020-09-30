@@ -28,13 +28,29 @@ class AudioPlayer extends HTMLElement {
             this.shadowRoot.querySelector('.audio-top').appendChild(div.children[0]);
 
             let audio = new Audio();
-            audio.preload = 'metadata';
-            this.players.push(audio);
 
-            // Move cursor and update time
+            let playEvent = AudioPlayer.isFirefox() ? 'canplay' : 'canplaythrough';
+            audio.addEventListener(playEvent, () => {
+                let wrappers = this.shadowRoot.querySelectorAll('.audio-wrapper');
+                let wrapper = wrappers[i];
+                wrapper.querySelector('.waiting-indicator').style.display = 'none';
+            }, false);
+
+            audio.addEventListener('error', () => {
+                let wrappers = this.shadowRoot.querySelectorAll('.audio-wrapper');
+                let wrapper = wrappers[i];
+                wrapper.querySelector('.waiting-indicator').style.display = 'none';
+                wrapper.querySelector('.audio-title').classList.add('audio-title-error');
+                wrapper.querySelector('.audio-play').classList.add('audio-play-error');
+                console.error("Cannot load file " + audio.src);
+            }, false);
+
             audio.addEventListener('timeupdate', this.updateCursorFromTrack.bind(this), false);
+
+            audio.preload = 'metadata';
             audio.src = paths[i];
             audio.load();
+            this.players.push(audio);
         }
 
         this.addEventHandlers();
@@ -133,9 +149,7 @@ class AudioPlayer extends HTMLElement {
         let wrappers = this.shadowRoot.querySelectorAll('.audio-wrapper');
         let currentPlayer = this.players[currentWrapper.dataset.index];
 
-        if (!currentPlayer || currentPlayer.error) {
-            currentWrapper.querySelector('.audio-title').classList.add('audio-title-error');
-            currentWrapper.querySelector('.audio-play').classList.add('audio-play-error');
+        if (!currentPlayer || currentPlayer.error || !currentPlayer.src || currentPlayer.readyState < 3) {
             return;
         }
 
@@ -247,6 +261,10 @@ class AudioPlayer extends HTMLElement {
         }
     }
 
+    static isFirefox() {
+        return /Firefox/.test(navigator.userAgent);
+    }
+
     get tracks() {
         return JSON.parse(this.getAttribute('tracks'));
     }
@@ -352,7 +370,7 @@ class AudioPlayer extends HTMLElement {
                 height: 42px;
                 margin-left:8px;
                 position: relative;
-                top: -3px;
+                top: -2px;
                 width: 42px;
                 justify-content: center;
                 -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
@@ -452,6 +470,54 @@ class AudioPlayer extends HTMLElement {
                 width: 260px;
             }
             
+            .waiting-indicator {
+                animation: fadeIn 0.3s ease-in 1 normal;
+                background-color: #c3c3c3a6;
+                height: 100%;
+                position: absolute;
+                width: 100%;
+                z-index: 2;
+            }
+
+            @keyframes fadeIn {
+                0% { opacity: 0; }
+                100% { opacity: 1; }
+            }
+
+            .waiting-indicator > div {
+                background-color: #d8d8d8;
+                border-bottom: solid 1px #143e67;
+                border-top: solid 1px #143e67;
+                border-radius: 50%;
+                position: absolute;
+            }
+
+            .waiting-circle-1 {
+                animation: waiting 2s ease-in-out infinite normal;
+                border-left: solid 2px #143e67;
+                border-right: none;
+                height: 32px;
+                left: 112px;
+                top: 10px;
+                width: 32px;
+            }
+
+            .waiting-circle-2 {
+                animation: waiting 2s ease-in-out infinite reverse;
+                animation-delay: 1s;
+                border-left: none;
+                border-right: solid 2px #143e67;
+                height: 24px;
+                left: 116px;
+                top: 14px;
+                width: 24px;
+            }
+
+            @keyframes waiting {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+
             /* Hover and selection effects for mouse */
             @media(hover: hover) and (pointer: fine) {
                 .audio-wrapper {
@@ -545,6 +611,10 @@ class AudioPlayer extends HTMLElement {
                 <div class="audio-title ellipsis">` + title + `</div>
                 <div class="audio-play">
                     <div class="audio-icon"></div>
+                </div>
+                <div class="waiting-indicator">
+                    <div class="waiting-circle-1"></div>
+                    <div class="waiting-circle-2"></div>
                 </div>
             </div>`;
     }

@@ -1,6 +1,6 @@
 # audio-player
 
-A custom playlist-style UI that wraps the HTML5 audio element. The player implements many of the same operations available in the built-in audio controls (e.g. click and drag seek, volume on/off, track selection, buffering indicator), but presents them in a list with more appealing custom style. The code is encapsulated in a web component for easy reuse.
+A custom playlist-style UI that wraps the HTML5 audio element. The player implements many of the same operations available in the built-in audio controls (e.g. click and drag seek, volume on/off, track selection, buffering indicator), but presents them in a list with more appealing custom style. Audio files are loaded on demand when selected (a busy indicator appears if it takes a noticeable amount of time to load). The code is encapsulated in a web component for easy reuse.
 
 <p align="center">
     <img src="./images/media-player.png" width="300"/>

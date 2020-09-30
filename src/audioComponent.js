@@ -28,28 +28,9 @@ class AudioPlayer extends HTMLElement {
             this.shadowRoot.querySelector('.audio-top').appendChild(div.children[0]);
 
             let audio = new Audio();
-
-            let playEvent = AudioPlayer.isFirefox() ? 'canplay' : 'canplaythrough';
-            audio.addEventListener(playEvent, () => {
-                let wrappers = this.shadowRoot.querySelectorAll('.audio-wrapper');
-                let wrapper = wrappers[i];
-                wrapper.querySelector('.waiting-indicator').style.display = 'none';
-            }, false);
-
-            audio.addEventListener('error', () => {
-                let wrappers = this.shadowRoot.querySelectorAll('.audio-wrapper');
-                let wrapper = wrappers[i];
-                wrapper.querySelector('.waiting-indicator').style.display = 'none';
-                wrapper.querySelector('.audio-title').classList.add('audio-title-error');
-                wrapper.querySelector('.audio-play').classList.add('audio-play-error');
-                console.error("Cannot load file " + audio.src);
-            }, false);
-
-            audio.addEventListener('timeupdate', this.updateCursorFromTrack.bind(this), false);
-
-            audio.preload = 'metadata';
+            audio.addEventListener('timeupdate', this.updateCursorFromTrack.bind(this));
+            audio.preload = 'none';
             audio.src = paths[i];
-            audio.load();
             this.players.push(audio);
         }
 
@@ -80,7 +61,7 @@ class AudioPlayer extends HTMLElement {
 
         // Single click jumps cursor to new location
         function singleClick(e) {
-            if (isNaN(component.currentTrack)) {
+            if (isNaN(component.currentTrack) || component.players[component.currentTrack].error || component.pending) {
                 return;
             }
 
@@ -94,7 +75,7 @@ class AudioPlayer extends HTMLElement {
 
         // Touch/click and move cursor pauses track and then plays from new location
         function startHandler(e) {
-            if (isNaN(component.currentTrack) || (e.button > 0 && !e.touches)) {
+            if (isNaN(component.currentTrack) || component.players[component.currentTrack].error || component.pending || (e.button > 0 && !e.touches)) {
                 return;
             }
 
@@ -142,39 +123,82 @@ class AudioPlayer extends HTMLElement {
 
     playOrPause(event) {
         let currentWrapper = event.target.closest('.audio-wrapper');
-        if (!currentWrapper) {
+        if (this.pending || !currentWrapper) {
             return;
         }
 
-        let wrappers = this.shadowRoot.querySelectorAll('.audio-wrapper');
         let currentPlayer = this.players[currentWrapper.dataset.index];
+        let oldTrack = this.currentTrack;
+        this.currentTrack = parseInt(currentWrapper.dataset.index);
 
-        if (!currentPlayer || currentPlayer.error || !currentPlayer.src || currentPlayer.readyState < 3) {
-            return;
-        }
+        // stop existing audio stream
+        if (oldTrack !== this.currentTrack) {
+            let oldWrapper = this.shadowRoot.querySelector('.audio-wrapper-selected');
 
-        // indicate selection
-        currentWrapper.classList.add('audio-wrapper-selected');
-
-        if (currentPlayer.paused) {
-            // turn off other audio stream if it is playing
-            let oldTrack = this.currentTrack;
-            this.currentTrack = parseInt(currentWrapper.dataset.index);
-            if (!isNaN(oldTrack) && oldTrack !== this.currentTrack) {
-                let oldWrapper = wrappers[oldTrack];
+            // may not be defined if player has error
+            if (oldWrapper) {
                 oldWrapper.classList.remove('audio-wrapper-selected');
                 oldWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause');
                 this.players[oldWrapper.dataset.index].pause();
             }
 
-            // reset cursor if changing or restarting track
-            if (oldTrack !== this.currentTrack || Math.abs(currentPlayer.duration - currentPlayer.currentTime) < 0.001) {
+            // reset cursor
+            currentPlayer.currentTime = 0;
+            this.updateCursorFromTrack();
+            this.shadowRoot.querySelector(".buffered-amount").style.width = '0%';
+        }
+
+        if (!currentPlayer || currentPlayer.error || !currentPlayer.src) {
+            return;
+        } else if (currentPlayer.readyState === 4) {
+            this.playOrPauseImmediate(currentWrapper, currentPlayer);
+        } else {
+            currentWrapper.querySelector('.waiting-indicator').style.display = 'block';
+
+            currentPlayer.addEventListener('stalled', () => { 
+                // stalled might be called when track ends (Safari), so only show waiting indicator if still playing
+                if (!currentPlayer.paused) {
+                    currentWrapper.querySelector('.waiting-indicator').style.display = 'block'; 
+                }
+            });
+
+            currentPlayer.addEventListener('playing', () => { currentWrapper.querySelector('.waiting-indicator').style.display = 'none'; });
+            currentPlayer.onended = () => { currentWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause'); };
+            currentPlayer.addEventListener('error', onerror);
+            currentPlayer.addEventListener('canplaythrough', onplay);
+            if (AudioPlayer.isFirefox()) { currentPlayer.addEventListener('canplay', onplay); }
+
+            this.pending = true;
+            currentPlayer.load();
+        }
+
+        // use named functions for canplay* and error so they can be removed after firing
+        var component = this;
+        function onplay() {
+            if (currentPlayer.paused) { // safety check in case event fires more than once
+                delete component.pending;
+                currentPlayer.removeEventListener('canplaythrough', onplay);
+                currentPlayer.removeEventListener('canplay', onplay);
+                component.playOrPauseImmediate(currentWrapper, currentPlayer);
+            }
+        }
+
+        function onerror() {
+            delete component.pending;
+            currentWrapper.querySelector('.waiting-indicator').style.display = 'none';
+            currentWrapper.querySelector('.audio-title').classList.add('audio-title-error');
+            currentWrapper.querySelector('.audio-play').classList.add('audio-play-error');
+            currentPlayer.removeEventListener('error', onerror);
+        }
+    }
+
+    playOrPauseImmediate(currentWrapper, currentPlayer) {
+        currentWrapper.classList.add('audio-wrapper-selected');
+        if (currentPlayer.paused) {
+            // reset cursor if restarting track
+            if (Math.abs(currentPlayer.duration - currentPlayer.currentTime) < 0.001) {
                 currentPlayer.currentTime = 0;
                 this.updateCursorFromTrack();
-                currentPlayer.onended = () => {
-                    currentWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause');
-                    this.updateCursorFromTrack(); // move cursor to end in case last update never happened
-                };
             }
 
             // play, and set up recurring cursor updates
@@ -210,6 +234,7 @@ class AudioPlayer extends HTMLElement {
             // As of Sept 2020, some browsers (Safari, Edge) won't fire onended callback if time is manually set to the end
             player.onended();
         } else if (player.resumeOnRelease) {
+            this.shadowRoot.querySelector('.audio-wrapper-selected').querySelector('.waiting-indicator').style.display = 'block';
             player.play();
         }
 
@@ -222,9 +247,10 @@ class AudioPlayer extends HTMLElement {
             return;
         }
 
-        let position = this.cursorBarMax * player.currentTime / player.duration;
+        let progress = isNaN(player.duration) ? 0 : player.currentTime / player.duration;
+        let position = this.cursorBarMax * progress;
         this.shadowRoot.querySelector('.cursor').style.left = position + 'px';
-        this.shadowRoot.querySelector('.progress-amount').style.width = ((player.currentTime / player.duration) * 100) + "%";
+        this.shadowRoot.querySelector('.progress-amount').style.width = (progress * 100) + "%";
         this.updateBuffer(player);
         this.updateTime();
     }
@@ -243,9 +269,9 @@ class AudioPlayer extends HTMLElement {
         }
 
         let player = this.players[this.currentTrack];
-        let currentTime = isNaN(position) ? player.currentTime : position * player.duration;
+        let currentTime = isNaN(position) ? player.currentTime : position * (player.duration || 0);
         let current = formatTime(currentTime);
-        let total = formatTime(player.duration);
+        let total = formatTime(player.duration || 0);
         this.shadowRoot.querySelector('.time-bar-time').innerHTML = current + ' / ' + total;
     }
 
@@ -261,10 +287,6 @@ class AudioPlayer extends HTMLElement {
         }
     }
 
-    static isFirefox() {
-        return /Firefox/.test(navigator.userAgent);
-    }
-
     get tracks() {
         return JSON.parse(this.getAttribute('tracks'));
     }
@@ -273,9 +295,14 @@ class AudioPlayer extends HTMLElement {
         return JSON.parse(this.getAttribute('paths'));
     }
 
+    static isFirefox() {
+        return /Firefox/.test(navigator.userAgent);
+    }
+
     static get template() {
         const styles = `
             .player-wrapper {
+                font-family: 'Oswald', sans-serif;
                 margin: auto;
                 position: relative;
                 width: 272px;
@@ -379,11 +406,11 @@ class AudioPlayer extends HTMLElement {
             .volume-icon {
                 height:24px;
                 width: 24px;
-                background: url('./images/volume_up-24px.svg');
+                background: url('../images/volume_up-24px.svg');
             }
 
             .volume-icon.volume-icon-mute {
-                background: url('./images/volume_off-24px.svg');
+                background: url('../images/volume_off-24px.svg');
             }
 
             .cursor-wrapper {
@@ -471,8 +498,9 @@ class AudioPlayer extends HTMLElement {
             }
             
             .waiting-indicator {
-                animation: fadeIn 0.3s ease-in 1 normal;
+                animation: fadeIn 1s ease-in 1 normal;
                 background-color: #c3c3c3a6;
+                display: none;
                 height: 100%;
                 position: absolute;
                 width: 100%;
@@ -481,6 +509,7 @@ class AudioPlayer extends HTMLElement {
 
             @keyframes fadeIn {
                 0% { opacity: 0; }
+                50% { opacity: 0; }
                 100% { opacity: 1; }
             }
 

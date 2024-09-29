@@ -416,7 +416,7 @@ class AudioPlayer extends HTMLElement {
                 position: relative;
                 overflow-x: hidden;
                 overflow-y: auto;
-                border-left: solid 2px
+                border-left: solid 2px #143e67; 
             }
 
             .ellipsis {

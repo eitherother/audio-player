@@ -1,306 +1,409 @@
-'use strict';
+"use strict";
 
 class AudioPlayer extends HTMLElement {
-    constructor() {
-        super();
-        this.cursorBarMax = 182;
-        this.muted = false;
+  constructor() {
+    super();
+    this.cursorBarMax = 182;
+    this.muted = false;
+  }
+
+  connectedCallback() {
+    // Template
+    this.attachShadow({ mode: "open" });
+    this.shadowRoot.innerHTML = AudioPlayer.template;
+
+    // Load audio player for each track
+    this.players = [];
+    let tracks = this.tracks;
+    let paths = this.paths;
+
+    if (
+      !tracks ||
+      !paths ||
+      !Array.isArray(tracks) ||
+      !Array.isArray(paths) ||
+      tracks.length !== paths.length
+    ) {
+      console.error(
+        "Cannot load audio player, missing tracks or paths to files"
+      );
+      return;
     }
 
-    connectedCallback() {
-        // Template
-        this.attachShadow({ mode: 'open' });
-        this.shadowRoot.innerHTML = AudioPlayer.template;
+    for (let [i, title] of tracks.entries()) {
+      let div = document.createElement("div");
+      div.innerHTML = AudioPlayer.trackTemplate(title, i);
+      this.shadowRoot.querySelector(".audio-top").appendChild(div.children[0]);
 
-        // Load audio player for each track
-        this.players = [];
-        let tracks = this.tracks;
-        let paths = this.paths;
-
-        if (!tracks || !paths || !Array.isArray(tracks) || !Array.isArray(paths) || tracks.length !== paths.length) {
-            console.error("Cannot load audio player, missing tracks or paths to files");
-            return;
-        }
-
-        for (let [i, title] of tracks.entries()) {
-            let div = document.createElement('div');
-            div.innerHTML = AudioPlayer.trackTemplate(title, i);
-            this.shadowRoot.querySelector('.audio-top').appendChild(div.children[0]);
-
-            let audio = new Audio();
-            audio.addEventListener('timeupdate', this.updateCursorFromTrack.bind(this));
-            audio.preload = 'none';
-            audio.src = paths[i];
-            this.players.push(audio);
-        }
-
-        this.addEventHandlers();
+      let audio = new Audio();
+      audio.addEventListener(
+        "timeupdate",
+        this.updateCursorFromTrack.bind(this)
+      );
+      audio.preload = "none";
+      audio.src = paths[i];
+      this.players.push(audio);
     }
 
-    addEventHandlers() {
-        let audioTop = this.shadowRoot.querySelector('.audio-top');
-        let cursorBar = this.shadowRoot.querySelector('.cursor-wrapper');
-        let cursor = cursorBar.querySelector('.cursor');
-        let volumeWrapper = this.shadowRoot.querySelector('.volume-wrapper');
-        let component = this;
-
-        // Volume on/off
-        volumeWrapper.addEventListener('click', () => {
-            component.muted = !component.muted;
-            volumeWrapper.querySelector('.volume-icon').classList.toggle('volume-icon-mute');
-
-            if (isNaN(component.currentTrack)) {
-                return;
-            }
-
-            this.players[component.currentTrack].muted = component.muted;
-        });
-
-        // Listener for play/pause
-        audioTop.addEventListener('click', this.playOrPause.bind(this));
-
-        // Single click jumps cursor to new location
-        function singleClick(e) {
-            if (isNaN(component.currentTrack) || component.players[component.currentTrack].error || component.pending) {
-                return;
-            }
-
-            let position = newPosition(e);
-            component.holdTrack();
-            cursor.style.left = position + 'px';
-            component.updateTrackFromCursor();
-        }
-
-        cursorBar.addEventListener('click', singleClick);
-
-        // Touch/click and move cursor pauses track and then plays from new location
-        function startHandler(e) {
-            if (isNaN(component.currentTrack) || component.players[component.currentTrack].error || component.pending || (e.button > 0 && !e.touches)) {
-                return;
-            }
-
-            component.holdTrack();
-            window.addEventListener(e.type === 'mousedown' ? 'mousemove' : 'touchmove', moveHandler);
-            window.addEventListener(e.type === 'mousedown' ? 'mouseup' : 'touchend', endHandler);
-            cursorBar.removeEventListener('click', singleClick);
-            e.stopPropagation();
-            e.preventDefault();
-        }
-
-        function moveHandler(e) {
-            let position = newPosition(e);
-            cursor.style.left = position + 'px';
-            component.shadowRoot.querySelector('.progress-amount').style.width = (100 * position / component.cursorBarMax) + '%';
-            component.updateTime(position / component.cursorBarMax);
-        }
-
-        function endHandler(e) {
-            window.removeEventListener(e.type === 'mouseup' ? 'mousemove' : 'touchmove', moveHandler);
-            window.removeEventListener(e.type === 'mouseup' ? 'mouseup' : 'touchend', endHandler);
-            setTimeout(() => { // delay listener in case this event triggers 'click'
-                cursorBar.addEventListener('click', singleClick);
-            }, 0);
-
-            component.updateTrackFromCursor();
-        }
-
-        function newPosition(e) {
-            let rect = cursorBar.getBoundingClientRect();
-            let x = e.touches ? e.touches[0].clientX : e.clientX;
-            let position = x - rect.left - 8;
-            if (position < 0) {
-                position = 0;
-            } else if (position > component.cursorBarMax) {
-                position = component.cursorBarMax;
-            }
-
-            return position;
-        }
-
-        this.shadowRoot.querySelector('.cursor').addEventListener('mousedown', startHandler);
-        this.shadowRoot.querySelector('.cursor').addEventListener('touchstart', startHandler);
+    if (this.height) {
+      this.shadowRoot.querySelector(
+        ".audio-top"
+      ).style.height = `${this.height}px`;
     }
 
-    playOrPause(event) {
-        let currentWrapper = event.target.closest('.audio-wrapper');
-        if (this.pending || !currentWrapper) {
-            return;
-        }
+    this.addEventHandlers();
+  }
 
-        let currentPlayer = this.players[currentWrapper.dataset.index];
-        let oldTrack = this.currentTrack;
-        this.currentTrack = parseInt(currentWrapper.dataset.index);
+  addEventHandlers() {
+    let audioTop = this.shadowRoot.querySelector(".audio-top");
+    let cursorBar = this.shadowRoot.querySelector(".cursor-wrapper");
+    let cursor = cursorBar.querySelector(".cursor");
+    let volumeWrapper = this.shadowRoot.querySelector(".volume-wrapper");
+    let component = this;
 
-        // stop existing audio stream
-        if (oldTrack !== this.currentTrack) {
-            let oldWrapper = this.shadowRoot.querySelector('.audio-wrapper-selected');
+    // Volume on/off
+    volumeWrapper.addEventListener("click", () => {
+      component.muted = !component.muted;
+      volumeWrapper
+        .querySelector(".volume-icon")
+        .classList.toggle("volume-icon-mute");
 
-            // may not be defined if player has error
-            if (oldWrapper) {
-                oldWrapper.classList.remove('audio-wrapper-selected');
-                oldWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause');
-                this.players[oldWrapper.dataset.index].pause();
-            }
+      if (isNaN(component.currentTrack)) {
+        return;
+      }
 
-            // reset cursor
-            currentPlayer.currentTime = 0;
-            this.updateCursorFromTrack();
-            this.shadowRoot.querySelector(".buffered-amount").style.width = '0%';
-        }
+      this.players[component.currentTrack].muted = component.muted;
+    });
 
-        if (!currentPlayer || currentPlayer.error || !currentPlayer.src) {
-            return;
-        } else if (currentPlayer.readyState === 4) {
-            this.playOrPauseImmediate(currentWrapper, currentPlayer);
-        } else {
-            currentWrapper.querySelector('.waiting-indicator').style.display = 'block';
+    // Listener for play/pause
+    audioTop.addEventListener("click", this.playOrPause.bind(this));
 
-            currentPlayer.addEventListener('stalled', () => { 
-                // stalled might be called when track ends (Safari), so only show waiting indicator if still playing
-                if (!currentPlayer.paused) {
-                    currentWrapper.querySelector('.waiting-indicator').style.display = 'block'; 
-                }
-            });
+    // Single click jumps cursor to new location
+    function singleClick(e) {
+      if (
+        isNaN(component.currentTrack) ||
+        component.players[component.currentTrack].error ||
+        component.pending
+      ) {
+        return;
+      }
 
-            currentPlayer.addEventListener('playing', () => { currentWrapper.querySelector('.waiting-indicator').style.display = 'none'; });
-            currentPlayer.onended = () => { currentWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause'); };
-            currentPlayer.addEventListener('error', onerror);
-            currentPlayer.addEventListener('canplaythrough', onplay);
-            if (AudioPlayer.isFirefox()) { currentPlayer.addEventListener('canplay', onplay); }
-
-            this.pending = true;
-            currentPlayer.load();
-        }
-
-        // use named functions for canplay* and error so they can be removed after firing
-        var component = this;
-        function onplay() {
-            if (currentPlayer.paused) { // safety check in case event fires more than once
-                delete component.pending;
-                currentPlayer.removeEventListener('canplaythrough', onplay);
-                currentPlayer.removeEventListener('canplay', onplay);
-                component.playOrPauseImmediate(currentWrapper, currentPlayer);
-            }
-        }
-
-        function onerror() {
-            delete component.pending;
-            currentWrapper.querySelector('.waiting-indicator').style.display = 'none';
-            currentWrapper.querySelector('.audio-title').classList.add('audio-title-error');
-            currentWrapper.querySelector('.audio-play').classList.add('audio-play-error');
-            currentPlayer.removeEventListener('error', onerror);
-        }
+      let position = newPosition(e);
+      component.holdTrack();
+      cursor.style.left = position + "px";
+      component.updateTrackFromCursor();
     }
 
-    playOrPauseImmediate(currentWrapper, currentPlayer) {
-        currentWrapper.classList.add('audio-wrapper-selected');
-        if (currentPlayer.paused) {
-            // reset cursor if restarting track
-            if (Math.abs(currentPlayer.duration - currentPlayer.currentTime) < 0.001) {
-                currentPlayer.currentTime = 0;
-                this.updateCursorFromTrack();
-            }
+    cursorBar.addEventListener("click", singleClick);
 
-            // play, and set up recurring cursor updates
-            currentPlayer.muted = this.muted;
-            currentWrapper.querySelector('.audio-icon').classList.add('audio-icon-pause');
-            this.shadowRoot.querySelector('.time-bar-title').innerText = this.tracks[this.currentTrack];
-            currentPlayer.play();
-        } else {
-            currentPlayer.pause();
-            currentWrapper.querySelector('.audio-icon').classList.remove('audio-icon-pause');
+    // Touch/click and move cursor pauses track and then plays from new location
+    function startHandler(e) {
+      if (
+        isNaN(component.currentTrack) ||
+        component.players[component.currentTrack].error ||
+        component.pending ||
+        (e.button > 0 && !e.touches)
+      ) {
+        return;
+      }
+
+      component.holdTrack();
+      window.addEventListener(
+        e.type === "mousedown" ? "mousemove" : "touchmove",
+        moveHandler
+      );
+      window.addEventListener(
+        e.type === "mousedown" ? "mouseup" : "touchend",
+        endHandler
+      );
+      cursorBar.removeEventListener("click", singleClick);
+      e.stopPropagation();
+      e.preventDefault();
+    }
+
+    function moveHandler(e) {
+      let position = newPosition(e);
+      cursor.style.left = position + "px";
+      component.shadowRoot.querySelector(".progress-amount").style.width =
+        (100 * position) / component.cursorBarMax + "%";
+      component.updateTime(position / component.cursorBarMax);
+    }
+
+    function endHandler(e) {
+      window.removeEventListener(
+        e.type === "mouseup" ? "mousemove" : "touchmove",
+        moveHandler
+      );
+      window.removeEventListener(
+        e.type === "mouseup" ? "mouseup" : "touchend",
+        endHandler
+      );
+      setTimeout(() => {
+        // delay listener in case this event triggers 'click'
+        cursorBar.addEventListener("click", singleClick);
+      }, 0);
+
+      component.updateTrackFromCursor();
+    }
+
+    function newPosition(e) {
+      let rect = cursorBar.getBoundingClientRect();
+      let x = e.touches ? e.touches[0].clientX : e.clientX;
+      let position = x - rect.left - 8;
+      if (position < 0) {
+        position = 0;
+      } else if (position > component.cursorBarMax) {
+        position = component.cursorBarMax;
+      }
+
+      return position;
+    }
+
+    this.shadowRoot
+      .querySelector(".cursor")
+      .addEventListener("mousedown", startHandler);
+    this.shadowRoot
+      .querySelector(".cursor")
+      .addEventListener("touchstart", startHandler);
+  }
+
+  playOrPause(event, useWrapper) {
+    let currentWrapper = useWrapper ?? event.target.closest(".audio-wrapper");
+    if (this.pending || !currentWrapper) {
+      return;
+    }
+
+    let currentPlayer = this.players[currentWrapper.dataset.index];
+    let oldTrack = this.currentTrack;
+    this.currentTrack = parseInt(currentWrapper.dataset.index);
+
+    // stop existing audio stream
+    if (oldTrack !== this.currentTrack) {
+      let oldWrapper = this.shadowRoot.querySelector(".audio-wrapper-selected");
+
+      // may not be defined if player has error
+      if (oldWrapper) {
+        oldWrapper.classList.remove("audio-wrapper-selected");
+        oldWrapper
+          .querySelector(".audio-icon")
+          .classList.remove("audio-icon-pause");
+        this.players[oldWrapper.dataset.index].pause();
+      }
+
+      // reset cursor
+      currentPlayer.currentTime = 0;
+      this.updateCursorFromTrack();
+      this.shadowRoot.querySelector(".buffered-amount").style.width = "0%";
+    }
+
+    if (!currentPlayer || currentPlayer.error || !currentPlayer.src) {
+      return;
+    } else if (currentPlayer.readyState === 4) {
+      this.playOrPauseImmediate(currentWrapper, currentPlayer);
+    } else {
+      currentWrapper.querySelector(".waiting-indicator").style.display =
+        "block";
+
+      currentPlayer.addEventListener("stalled", () => {
+        // stalled might be called when track ends (Safari), so only show waiting indicator if still playing
+        if (!currentPlayer.paused) {
+          currentWrapper.querySelector(".waiting-indicator").style.display =
+            "block";
         }
-    }
+      });
 
-    holdTrack() {
-        let player = this.players[this.currentTrack];
-        if (!player.paused) {
-            player.resumeOnRelease = true;
-            player.pause();
+      currentPlayer.addEventListener("playing", () => {
+        currentWrapper.querySelector(".waiting-indicator").style.display =
+          "none";
+      });
+      currentPlayer.onended = () => {
+        currentWrapper
+          .querySelector(".audio-icon")
+          .classList.remove("audio-icon-pause");
+
+        if (this.autoNext) {
+          const newIndex = parseInt(currentWrapper.dataset.index) + 1;
+          const newWrapper = this.shadowRoot.querySelector(
+            `[data-index="${newIndex}"]`
+          );
+          if (newWrapper) {
+            this.playOrPause(undefined, newWrapper);
+          }
         }
+      };
+      currentPlayer.addEventListener("error", onerror);
+      currentPlayer.addEventListener("canplaythrough", onplay);
+      if (AudioPlayer.isFirefox()) {
+        currentPlayer.addEventListener("canplay", onplay);
+      }
+
+      this.pending = true;
+      currentPlayer.load();
     }
 
-    updateTrackFromCursor() {
-        let cursor = this.shadowRoot.querySelector('.cursor');
-        let position = (parseInt(cursor.style.left) || 0) / this.cursorBarMax;
-        let player = this.players[this.currentTrack];
-        if (player && position >= 0 && position <= 1) {
-            player.currentTime = position * player.duration;
+    // use named functions for canplay* and error so they can be removed after firing
+    var component = this;
+    function onplay() {
+      if (currentPlayer.paused) {
+        // safety check in case event fires more than once
+        delete component.pending;
+        currentPlayer.removeEventListener("canplaythrough", onplay);
+        currentPlayer.removeEventListener("canplay", onplay);
+        component.playOrPauseImmediate(currentWrapper, currentPlayer);
+      }
+    }
+
+    function onerror() {
+      delete component.pending;
+      currentWrapper.querySelector(".waiting-indicator").style.display = "none";
+      currentWrapper
+        .querySelector(".audio-title")
+        .classList.add("audio-title-error");
+      currentWrapper
+        .querySelector(".audio-play")
+        .classList.add("audio-play-error");
+      currentPlayer.removeEventListener("error", onerror);
+    }
+  }
+
+  playOrPauseImmediate(currentWrapper, currentPlayer) {
+    currentWrapper.classList.add("audio-wrapper-selected");
+    if (currentPlayer.paused) {
+      // reset cursor if restarting track
+      if (
+        Math.abs(currentPlayer.duration - currentPlayer.currentTime) < 0.001
+      ) {
+        currentPlayer.currentTime = 0;
+        this.updateCursorFromTrack();
+      }
+
+      // play, and set up recurring cursor updates
+      currentPlayer.muted = this.muted;
+      currentWrapper
+        .querySelector(".audio-icon")
+        .classList.add("audio-icon-pause");
+      this.shadowRoot.querySelector(".time-bar-title").innerText =
+        this.tracks[this.currentTrack];
+      currentPlayer.play();
+    } else {
+      currentPlayer.pause();
+      currentWrapper
+        .querySelector(".audio-icon")
+        .classList.remove("audio-icon-pause");
+    }
+  }
+
+  holdTrack() {
+    let player = this.players[this.currentTrack];
+    if (!player.paused) {
+      player.resumeOnRelease = true;
+      player.pause();
+    }
+  }
+
+  updateTrackFromCursor() {
+    let cursor = this.shadowRoot.querySelector(".cursor");
+    let position = (parseInt(cursor.style.left) || 0) / this.cursorBarMax;
+    let player = this.players[this.currentTrack];
+    if (player && position >= 0 && position <= 1) {
+      player.currentTime = position * player.duration;
+    }
+
+    this.updateTime();
+
+    if (position === 1) {
+      // As of Sept 2020, some browsers (Safari, Edge) won't fire onended callback if time is manually set to the end
+      player.onended();
+    } else if (player.resumeOnRelease) {
+      this.shadowRoot
+        .querySelector(".audio-wrapper-selected")
+        .querySelector(".waiting-indicator").style.display = "block";
+      player.play();
+    }
+
+    delete player.resumeOnRelease;
+  }
+
+  updateCursorFromTrack() {
+    let player = this.players[this.currentTrack];
+    if (!player) {
+      return;
+    }
+
+    let progress = isNaN(player.duration)
+      ? 0
+      : player.currentTime / player.duration;
+    let position = this.cursorBarMax * progress;
+    this.shadowRoot.querySelector(".cursor").style.left = position + "px";
+    this.shadowRoot.querySelector(".progress-amount").style.width =
+      progress * 100 + "%";
+    this.updateBuffer(player);
+    this.updateTime();
+  }
+
+  updateTime(position) {
+    function formatTime(time) {
+      let minutes = Math.floor(time / 60);
+      let seconds = Math.round(time % 60);
+      if (seconds === 60) {
+        seconds = 0;
+        minutes++;
+      }
+
+      let paddedSeconds = (new Array(2).join("0") + seconds).slice(-2);
+      return minutes + ":" + paddedSeconds;
+    }
+
+    let player = this.players[this.currentTrack];
+    let currentTime = isNaN(position)
+      ? player.currentTime
+      : position * (player.duration || 0);
+    let current = formatTime(currentTime);
+    let total = formatTime(player.duration || 0);
+    this.shadowRoot.querySelector(".time-bar-time").innerHTML =
+      current + " / " + total;
+  }
+
+  updateBuffer(audio) {
+    let duration = audio.duration;
+    if (duration > 0) {
+      for (let i = 0; i < audio.buffered.length; i++) {
+        if (
+          audio.buffered.start(audio.buffered.length - 1 - i) <=
+          audio.currentTime
+        ) {
+          this.shadowRoot.querySelector(".buffered-amount").style.width =
+            (audio.buffered.end(audio.buffered.length - 1 - i) / duration) *
+              100 +
+            "%";
+          break;
         }
-
-        this.updateTime();
-
-        if (position === 1) {
-            // As of Sept 2020, some browsers (Safari, Edge) won't fire onended callback if time is manually set to the end
-            player.onended();
-        } else if (player.resumeOnRelease) {
-            this.shadowRoot.querySelector('.audio-wrapper-selected').querySelector('.waiting-indicator').style.display = 'block';
-            player.play();
-        }
-
-        delete player.resumeOnRelease;
+      }
     }
+  }
 
-    updateCursorFromTrack() {
-        let player = this.players[this.currentTrack];
-        if (!player) {
-            return;
-        }
+  get tracks() {
+    return JSON.parse(this.getAttribute("tracks"));
+  }
 
-        let progress = isNaN(player.duration) ? 0 : player.currentTime / player.duration;
-        let position = this.cursorBarMax * progress;
-        this.shadowRoot.querySelector('.cursor').style.left = position + 'px';
-        this.shadowRoot.querySelector('.progress-amount').style.width = (progress * 100) + "%";
-        this.updateBuffer(player);
-        this.updateTime();
-    }
+  get paths() {
+    return JSON.parse(this.getAttribute("paths"));
+  }
 
-    updateTime(position) {
-        function formatTime(time) {
-            let minutes = Math.floor(time / 60);
-            let seconds = Math.round(time % 60);
-            if (seconds === 60) {
-                seconds = 0;
-                minutes++;
-            }
+  get autoNext() {
+    return JSON.parse(this.getAttribute("autoNext"));
+  }
 
-            let paddedSeconds = (new Array(2).join('0') + seconds).slice(-2);
-            return minutes + ':' + paddedSeconds;
-        }
+  get height() {
+    return JSON.parse(this.getAttribute("height"));
+  }
 
-        let player = this.players[this.currentTrack];
-        let currentTime = isNaN(position) ? player.currentTime : position * (player.duration || 0);
-        let current = formatTime(currentTime);
-        let total = formatTime(player.duration || 0);
-        this.shadowRoot.querySelector('.time-bar-time').innerHTML = current + ' / ' + total;
-    }
+  static isFirefox() {
+    return /Firefox/.test(navigator.userAgent);
+  }
 
-    updateBuffer(audio) {
-        let duration = audio.duration;
-        if (duration > 0) {
-            for (let i = 0; i < audio.buffered.length; i++) {
-                if (audio.buffered.start(audio.buffered.length - 1 - i) <= audio.currentTime) {
-                    this.shadowRoot.querySelector(".buffered-amount").style.width = (audio.buffered.end(audio.buffered.length - 1 - i) / duration) * 100 + "%";
-                    break;
-                }
-            }
-        }
-    }
-
-    get tracks() {
-        return JSON.parse(this.getAttribute('tracks'));
-    }
-
-    get paths() {
-        return JSON.parse(this.getAttribute('paths'));
-    }
-
-    static isFirefox() {
-        return /Firefox/.test(navigator.userAgent);
-    }
-
-    static get template() {
-        const styles = `
+  static get template() {
+    const styles = `
             .player-wrapper {
                 font-family: 'Oswald', sans-serif;
                 margin: auto;
@@ -311,18 +414,11 @@ class AudioPlayer extends HTMLElement {
             .audio-top {
                 padding-bottom: 0px;
                 position: relative;
+                overflow-x: hidden;
+                overflow-y: auto;
+                border-left: solid 2px
             }
 
-            .audio-top::before {
-                background-color: #143e67;
-                content: '';
-                height: 100%;
-                left:0px;
-                position: absolute;
-                top:0;
-                width:2px;
-            }
-                        
             .ellipsis {
                 overflow: hidden;
                 white-space: nowrap;
@@ -609,7 +705,7 @@ class AudioPlayer extends HTMLElement {
                 }
             }`;
 
-        return `
+    return `
             <style>${styles}</style>
             <div class="player-wrapper">
                 <div class="audio-top"></div>
@@ -632,12 +728,17 @@ class AudioPlayer extends HTMLElement {
                     <div class="time-bar-time">0:00 / 0:00</div>
                 </div> 
             </div>`;
-    }
+  }
 
-    static trackTemplate(title, index) {
-        return `
-            <div class="audio-wrapper" data-index="` + index + `" tabindex="0">
-                <div class="audio-title ellipsis">` + title + `</div>
+  static trackTemplate(title, index) {
+    return (
+      `
+            <div class="audio-wrapper" data-index="` +
+      index +
+      `" tabindex="0">
+                <div class="audio-title ellipsis">` +
+      title +
+      `</div>
                 <div class="audio-play">
                     <div class="audio-icon"></div>
                 </div>
@@ -645,8 +746,9 @@ class AudioPlayer extends HTMLElement {
                     <div class="waiting-circle-1"></div>
                     <div class="waiting-circle-2"></div>
                 </div>
-            </div>`;
-    }
+            </div>`
+    );
+  }
 }
 
-customElements.define('audio-player', AudioPlayer);
+customElements.define("audio-player", AudioPlayer);
